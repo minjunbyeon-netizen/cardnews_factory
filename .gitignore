@@ -1,0 +1,17 @@
+# Google Drive 링크 파일 무시
+*.gsheet
+*.gdoc
+*.gslides
+
+# 출력 폴더 무시
+output/
+
+# 이미지 폴더 무시 (용량 큼)
+images/
+
+# 민감 정보
+service_account.json
+
+# Python
+__pycache__/
+*.pyc
