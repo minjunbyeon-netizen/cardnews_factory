@@ -1,54 +1,91 @@
 import os
 import json
+import time
+import requests
+import random
+import shutil
 from google import genai
 from google.genai import types
 
 # ======================================================
-# 1. 설정 및 초기화
+# [설정 1] 사용자 환경 설정
 # ======================================================
-
-# 본인의 API 키를 여기에 입력하세요 (따옴표 안에)
+# ⚠️ 여기에 아까 받은 [새 API 키]를 꼭 넣으세요!
 GEMINI_API_KEY = "AIzaSyCx3y1TCsIuq6RCGIBrL4IAya1qJGajDBQ"
 
-# 새로운 SDK 클라이언트 생성
+# ComfyUI 출력 폴더 (본인 경로가 맞는지 확인!)
+COMFY_OUTPUT_DIR = r"D:\ComfyUI\output" 
+
+# ComfyUI 서버 주소
+COMFY_URL = "http://127.0.0.1:8188/prompt"
+
+# 노드 번호 (ID) - 아까 확인한 번호 (보통 프롬프트=6, 샘플러=3)
+NODE_ID_PROMPT = "6"
+NODE_ID_SEED = "3"
+
+# 폴더 경로 설정 (자동)
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+INPUT_TXT_DIR = os.path.join(BASE_DIR, "input_text")
+DONE_TXT_DIR = os.path.join(BASE_DIR, "done_text")
+OUTPUT_HTML_DIR = os.path.join(BASE_DIR, "final_result")
+
+# ======================================================
+# 시스템 초기화 (폴더가 없으면 자동으로 만듦)
+# ======================================================
 client = genai.Client(api_key=GEMINI_API_KEY)
+os.makedirs(INPUT_TXT_DIR, exist_ok=True)
+os.makedirs(DONE_TXT_DIR, exist_ok=True)
+os.makedirs(OUTPUT_HTML_DIR, exist_ok=True)
 
-# 경로 설정 (사용자님 기존 코드 유지)
-base_dir = os.path.dirname(os.path.abspath(__file__))
-images_dir = r"D:\comfyui\output"  # ComfyUI 출력 폴더
-output_dir = os.path.join(base_dir, "output")
-template_cover_path = os.path.join(base_dir, "template.html")
-template_content_path = os.path.join(base_dir, "template_content.html")
-# json_path = os.path.join(base_dir, GOOGLE_JSON_FILE) # 필요 시 주석 해제
+# 템플릿 경로
+template_cover_path = os.path.join(BASE_DIR, "template.html")
+template_content_path = os.path.join(BASE_DIR, "template_content.html")
 
 # ======================================================
-# 2. AI 스크립트 생성 함수 (5장 슬라이드용)
+# 1. Gemini: 텍스트 기획안 생성
 # ======================================================
-
-def get_ai_script_5slides(topic):
-    """5장 분량의 카드뉴스 콘텐츠 생성"""
-    print(f"[AI] Gemini가 '{topic}' 5장 슬라이드 제작 중...")
+def get_full_plan_from_text(raw_text):
+    print(f"🧠 Gemini가 내용을 분석하고 있습니다...")
 
     prompt = f"""
-    너는 SNS 카드뉴스 전문 카피라이터야.
-    주제: '{topic}'
+    너는 SNS 카드뉴스 전문 PD야. 
+    사용자가 입력한 아래 내용을 바탕으로 5장짜리 카드뉴스를 기획해줘.
     
-    5장짜리 카드뉴스를 만들어줘. 각 장의 역할:
-    - 1장(cover): 사람들의 시선을 끄는 표지 (제목 10자, 부제목 15자 이내)
-    - 2장(point1): 첫 번째 핵심 포인트 (제목 10자, 설명 40자 이내)
-    - 3장(point2): 두 번째 핵심 포인트 (제목 10자, 설명 40자 이내)
-    - 4장(point3): 세 번째 핵심 포인트 (제목 10자, 설명 40자 이내)
-    - 5장(outro): 마무리 및 행동 유도 (제목 10자, 부제목 15자 이내)
+    [원본 텍스트]
+    {raw_text}
     
-    반드시 아래 JSON 형식으로만 답변해. (마크다운, 잡담 금지)
+    [필수 요청사항]
+    1. 각 슬라이드의 '제목', '내용(한글)', '그림 프롬프트(영어)'를 작성해.
+    2. 그림 프롬프트는 ComfyUI용이므로 'Pororo animation style, 3d render, cute, vivid colors' 등 원본 분위기에 맞는 스타일 태그를 꼭 넣어줘.
+    3. 반드시 아래 JSON 형식으로만 답해.
     
     {{
         "slides": [
-            {{"title": "표지 제목", "content": "짧은 부제목"}},
-            {{"title": "포인트1", "content": "핵심 내용을 2문장으로 설명해줘"}},
-            {{"title": "포인트2", "content": "핵심 내용을 2문장으로 설명해줘"}},
-            {{"title": "포인트3", "content": "핵심 내용을 2문장으로 설명해줘"}},
-            {{"title": "마무리", "content": "행동 유도 문구"}}
+            {{
+                "title": "1장 표지 제목",
+                "content": "짧고 강렬한 부제목",
+                "img_prompt": "English prompt for cover..."
+            }},
+            {{
+                "title": "2장 소제목",
+                "content": "핵심 내용 요약...",
+                "img_prompt": "English prompt..."
+            }},
+            {{
+                "title": "3장 소제목",
+                "content": "핵심 내용 요약...",
+                "img_prompt": "English prompt..."
+            }},
+            {{
+                "title": "4장 소제목",
+                "content": "핵심 내용 요약...",
+                "img_prompt": "English prompt..."
+            }},
+            {{
+                "title": "5장 마무리",
+                "content": "결론 및 행동 유도",
+                "img_prompt": "English prompt..."
+            }}
         ]
     }}
     """
@@ -57,121 +94,152 @@ def get_ai_script_5slides(topic):
         response = client.models.generate_content(
             model='gemini-2.5-flash',
             contents=prompt,
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json"
-            )
+            config=types.GenerateContentConfig(response_mime_type="application/json")
         )
-
-        if response.text:
-            data = json.loads(response.text)
-            slides = data.get("slides", [])
-            
-            print(f"[OK] {len(slides)}장 슬라이드 생성 완료!")
-            for i, slide in enumerate(slides, 1):
-                print(f"  [{i}] {slide.get('title')} | {slide.get('content')}")
-            
-            return slides
-        else:
-            print("[WARN] API 응답이 비어있습니다.")
-            return []
-
+        data = json.loads(response.text)
+        return data.get("slides", [])
     except Exception as e:
-        print(f"[ERROR] 에러 발생: {e}")
+        print(f"❌ 기획 중 에러 발생: {e}")
         return []
 
 # ======================================================
-# 3. HTML 카드뉴스 생성 함수 (5장 버전)
+# 2. ComfyUI: 이미지 생성
 # ======================================================
-
-def generate_card_news(topic):
-    """
-    주제를 받아 5장 슬라이드 카드뉴스 생성
+def generate_images(slides):
+    print("\n🎨 ComfyUI에게 그림 5장을 그리라고 시킵니다...")
     
-    Args:
-        topic: 카드뉴스 주제
-    
-    Returns:
-        생성된 HTML 파일 경로 리스트
-    """
-    from datetime import datetime
-    
-    # 1. AI로 5장 슬라이드 콘텐츠 생성
-    slides = get_ai_script_5slides(topic)
-    
-    if not slides:
-        print("[ERROR] 슬라이드 생성 실패!")
+    # 워크플로우 파일 읽기
+    try:
+        with open("workflow_api.json", "r", encoding="utf-8") as f:
+            workflow = json.load(f)
+    except FileNotFoundError:
+        print("❌ 'workflow_api.json' 파일이 없습니다! 같은 폴더에 넣어주세요.")
         return []
+
+    # 5장 반복 생성
+    for i, slide in enumerate(slides, 1):
+        prompt_text = slide['img_prompt']
+        print(f"   [{i}장] 요청: {prompt_text[:30]}...")
+        
+        # 프롬프트 교체
+        workflow[NODE_ID_PROMPT]["inputs"]["text"] = prompt_text
+        
+        # 시드 랜덤 변경
+        if NODE_ID_SEED in workflow:
+            workflow[NODE_ID_SEED]["inputs"]["seed"] = random.randint(1, 9999999999)
+        
+        # 전송
+        try:
+            requests.post(COMFY_URL, json={"prompt": workflow})
+        except:
+            print("❌ ComfyUI 서버가 꺼져있습니다! (http://127.0.0.1:8188)")
+            return []
+        
+        # 다음 장 그릴 때까지 잠시 대기
+        time.sleep(6) 
+
+    # 최신 이미지 5장 가져오기
+    # (ComfyUI 출력 폴더에서 가장 최근에 생긴 파일들을 찾음)
+    try:
+        all_files = [os.path.join(COMFY_OUTPUT_DIR, f) for f in os.listdir(COMFY_OUTPUT_DIR) 
+                     if f.lower().endswith(('.png', '.jpg'))]
+        all_files.sort(key=os.path.getmtime, reverse=True) # 최신순 정렬
+        
+        new_images = all_files[:5] # 상위 5개
+        new_images.reverse() # 순서 뒤집기 (1->2->3->4->5)
+        return new_images
+    except Exception as e:
+        print(f"⚠️ 이미지 가져오기 실패: {e}")
+        return []
+
+# ======================================================
+# 3. HTML 합체
+# ======================================================
+def create_html_result(slides, image_paths, topic_name):
+    print(f"\n📑 '{topic_name}' HTML 조립 중...")
     
-    # 2. 템플릿 읽기 (표지용 + 콘텐츠용)
-    with open(template_cover_path, "r", encoding="utf-8") as f:
-        template_cover = f.read()
-    with open(template_content_path, "r", encoding="utf-8") as f:
-        template_content = f.read()
+    # 결과 저장 폴더 생성
+    timestamp = time.strftime("%Y%m%d_%H%M%S")
+    save_folder = os.path.join(OUTPUT_HTML_DIR, f"{topic_name}_{timestamp}")
+    os.makedirs(save_folder, exist_ok=True)
     
-    # 3. images 폴더에서 이미지 가져오기
-    image_files = [f for f in os.listdir(images_dir) 
-                   if f.lower().endswith(('.png', '.jpg', '.jpeg', '.webp', '.gif'))]
-    image_files.sort()  # 정렬
-    print(f"[IMG] 발견된 이미지: {len(image_files)}개")
-    
-    # 4. output 폴더 생성
-    os.makedirs(output_dir, exist_ok=True)
-    
-    # 5. 타임스탬프 폴더 생성 (한 세트로 묶기)
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    set_folder = os.path.join(output_dir, f"cardnews_{timestamp}")
-    os.makedirs(set_folder, exist_ok=True)
-    
-    # 6. 각 슬라이드별 HTML 파일 생성
-    saved_paths = []
-    slide_names = ["01_cover", "02_point1", "03_point2", "04_point3", "05_outro"]
-    
+    # 템플릿 읽기
+    try:
+        with open(template_cover_path, "r", encoding="utf-8") as f: cover_tpl = f.read()
+        with open(template_content_path, "r", encoding="utf-8") as f: content_tpl = f.read()
+    except FileNotFoundError:
+        print("❌ 템플릿 파일(template.html)이 없습니다.")
+        return
+
     for i, slide in enumerate(slides):
-        title = slide.get("title", "")
-        content = slide.get("content", "")
+        title = slide['title']
+        content = slide['content'].replace("\n", "<br>") # 줄바꿈 처리
         
+        # 이미지 경로 매칭
+        img_path = image_paths[i] if i < len(image_paths) else ""
+        
+        # HTML 내용 치환
         if i == 0:
-            # 1장: 표지 템플릿 (이미지 없음)
-            html_content = template_cover.replace("{{ title }}", title)
-            html_content = html_content.replace("{{ content }}", content)
+            html = cover_tpl.replace("{{ title }}", title).replace("{{ content }}", content)
         else:
-            # 2~5장: 콘텐츠 템플릿 (이미지 포함)
-            html_content = template_content.replace("{{ title }}", title)
-            html_content = html_content.replace("{{ content }}", content)
+            html = content_tpl.replace("{{ title }}", title).replace("{{ content }}", content).replace("{{ image_path }}", img_path)
             
-            # 이미지 배정 (2장=첫번째 이미지, 3장=두번째...)
-            img_index = i - 1  # 0, 1, 2, 3
-            if img_index < len(image_files):
-                image_path = os.path.join(images_dir, image_files[img_index])
-                html_content = html_content.replace("{{ image_path }}", image_path)
-            else:
-                html_content = html_content.replace("{{ image_path }}", "")
-        
         # 파일 저장
-        filename = f"{slide_names[i]}.html"
-        output_path = os.path.join(set_folder, filename)
-        
-        with open(output_path, "w", encoding="utf-8") as f:
-            f.write(html_content)
-        
-        saved_paths.append(output_path)
-    
-    print(f"\n[DONE] 카드뉴스 5장 생성 완료!")
-    print(f"[PATH] 저장 폴더: {set_folder}")
-    
-    return saved_paths
-
+        filename = f"{save_folder}/slide_{i+1:02d}.html"
+        with open(filename, "w", encoding="utf-8") as f:
+            f.write(html)
+            
+    print(f"✨ [{topic_name}] 작업 완료! 폴더: {save_folder}")
 
 # ======================================================
-# 4. 실행 (이 파일만 단독 실행 시 작동)
+# [메인] 폴더 감시 루프
 # ======================================================
 if __name__ == "__main__":
-    # 테스트 주제
-    test_topic = "직장인 재테크 꿀팁"
-    
-    # 5장 카드뉴스 생성
-    saved_paths = generate_card_news(test_topic)
-    
-    print("\n--- 최종 결과 ---")
-    for path in saved_paths:
-        print(f"[SAVED] {os.path.basename(path)}")
+    print(f"👀 '{INPUT_TXT_DIR}' 폴더를 감시 중입니다...")
+    print("텍스트 파일(.txt)을 넣으면 자동으로 작업을 시작합니다.")
+    print("(종료하려면 터미널에서 Ctrl+C 를 누르세요)")
+
+    while True:
+        try:
+            # 1. input 폴더 감시
+            input_files = [f for f in os.listdir(INPUT_TXT_DIR) if f.endswith('.txt')]
+            
+            if input_files:
+                target_file = input_files[0]
+                file_path = os.path.join(INPUT_TXT_DIR, target_file)
+                topic_name = os.path.splitext(target_file)[0]
+                
+                print(f"\n========================================")
+                print(f"📂 파일 발견! 작업 시작: {target_file}")
+                print(f"========================================")
+
+                # 2. 파일 읽기
+                with open(file_path, "r", encoding="utf-8") as f:
+                    raw_text = f.read()
+                
+                # 3. 작업 실행 (Gemini -> ComfyUI -> HTML)
+                slides_data = get_full_plan_from_text(raw_text)
+                if slides_data:
+                    generated_images = generate_images(slides_data)
+                    create_html_result(slides_data, generated_images, topic_name)
+                    
+                    # 4. 성공 시 done 폴더로 이동
+                    shutil.move(file_path, os.path.join(DONE_TXT_DIR, target_file))
+                    print(f"✅ 처리가 끝난 파일은 'done_text' 폴더로 이동했습니다.\n")
+                    print(f"👀 다음 파일을 기다리는 중...")
+                else:
+                    # 실패 시 에러 파일로 이름 바꿔서 이동
+                    print("❌ 기획 실패. 파일을 건너뜁니다.")
+                    error_dest = os.path.join(DONE_TXT_DIR, f"ERROR_{target_file}")
+                    if os.path.exists(error_dest): os.remove(error_dest) # 기존 에러 파일 있으면 삭제
+                    shutil.move(file_path, error_dest)
+
+            # 3초 대기
+            time.sleep(3)
+            
+        except KeyboardInterrupt:
+            print("\n👋 프로그램을 종료합니다.")
+            break
+        except Exception as e:
+            print(f"⚠️ 오류 발생 (프로그램 계속 실행됨): {e}")
+            time.sleep(3)
